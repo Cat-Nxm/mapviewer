@@ -313,11 +313,6 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
             w(f"  {k.upper():<6}{human(used):>10} / {human(cap):<10} {r * 100:5.1f}%  {bar(r, 30)}")
         else:
             w(f"  {k.upper():<6}{human(used):>10}  (map 里没有声明容量)")
-    if kind != "all":
-        mem = pick_memory(res, kind)
-        if mem:
-            r = total / mem.length
-            w(f"\n  {kind.upper():<6}{human(total):>10} / {human(mem.length):<10} {r * 100:5.1f}%  {bar(r, 30)}")
 
     # 按模块聚合
     if by == "module":
