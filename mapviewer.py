@@ -416,7 +416,6 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
     w(f"  合计        {human(total)}")
     w("")
 
-    # 空间占用条
     # 空间占用条 (有链接器声明的大小时, 以它为准)
     for k in ("flash", "ram"):
         sub = [e for e in entries if e.kind == k]
@@ -455,8 +454,9 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     # 按模块聚合
     if by == "module":
+        src_entries = entries if kind == "all" else [e for e in entries if e.kind == kind]
         agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])
-        for e in entries:
+        for e in src_entries:
             agg[e.module][0 if e.kind == "flash" else 1] += e.size
         rows = sorted(agg.items(), key=lambda kv: -(kv[1][0] + kv[1][1]))[:top]
         tf = sum(v[0] for v in agg.values()) or 1
@@ -473,29 +473,51 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
           + "  " + pad(human(tr), 10, "right"))
         return "\n".join(out) + "\n"
 
-    # 按符号排序 (占比是在各自存储器内部的占比)
-    totals = {k: (sum(e.size for e in entries if e.kind == k) or 1) for k in ("flash", "ram")}
-    rows = sorted(entries, key=lambda e: -e.size)[:top]
-    w("")
-    head = ("  " + pad("#", 3, "right") + "  " + pad("大小", 10, "right")
-            + "  " + pad("占比", 6, "right"))
-    if kind == "all":
-        head += "  " + pad("内存", 5)
-    w(head + "  " + pad("符号", 30) + "  来源")
-    w("  " + "-" * (96 if kind == "all" else 90))
-    for i, e in enumerate(rows, 1):
-        src = e.module + ("  [lib]" if e.is_lib else "")
-        pct = e.size / totals.get(e.kind, total) * 100
-        line = ("  " + pad(str(i), 3, "right") + "  " + pad(human(e.size), 10, "right")
-                + "  " + pad(f"{pct:.1f}%", 6, "right"))
-        if kind == "all":
-            line += "  " + pad("Flash" if e.kind == "flash" else "RAM", 5)
-        w(line + "  " + pad(e.symbol[:30], 30) + "  " + src)
+    # ---- 两张表单: Flash 一张, RAM 一张 ----
+
+    def in_flash(e: Entry) -> bool:
+        if e.kind == "flash":
+            return True
+        # .data 的初值在 Flash 里也存一份
+        return e.kind == "ram" and e.section.startswith(".data")
+
+    fl = [e for e in entries if in_flash(e)]
+    rm = [e for e in entries if e.kind == "ram"]
+    tf = sum(e.size for e in fl) or 1
+    tr = sum(e.size for e in rm) or 1
+
+    def emit_table(tag: str, selected: list[Entry], denom: int) -> None:
+        if not selected:
+            return
+        rows = sorted(selected, key=lambda x: -x.size)[:top]
+        mem = pick_memory(res, tag)
+        cap = mem.length if mem else 0
+        w("")
+        if cap:
+            r = denom / cap
+            w(f"  [{tag.upper()}]  {human(denom)} / {human(cap)}   {r * 100:5.1f}%  {bar(r, 24)}")
+        else:
+            w(f"  [{tag.upper()}]  {human(denom)}")
+        w("    " + pad("#", 3, "right") + "  " + pad("大小", 10, "right")
+          + "  " + pad("占比", 6, "right") + "  " + pad("段名", 30)
+          + "  " + pad("符号", 20) + "  来源")
+        w("    " + "-" * 108)
+        for i, e in enumerate(rows, 1):
+            src = e.module + ("  [lib]" if e.is_lib else "")
+            w("    " + pad(str(i), 3, "right") + "  " + pad(human(e.size), 10, "right")
+              + "  " + pad(f"{e.size / denom * 100:.1f}%", 6, "right")
+              + "  " + pad(e.section[:30], 30) + "  " + pad(e.symbol[:20], 20) + "  " + src)
+
+    if kind in ("all", "flash"):
+        emit_table("flash", fl, tf)
+    if kind in ("all", "ram"):
+        emit_table("ram", rm, tr)
+
     if kind == "all":
         w("")
-        w("  占比 = 在该存储器内部的占比。Flash 总量 " + human(totals["flash"])
-          + ", RAM 总量 " + human(totals["ram"]) + "。")
-        w("  只看一种: -k flash  或  -k ram")
+        w("  表头的合计按输入段相加, 会比上面的总量略大(链接器把重复内容列了多次)。")
+        w("  .data 的初值在 Flash 里也存一份, 所以它在两张表里都出现。")
+        w("  段名列就是 map 里的原名; .rtt_* / .version_info 等自定义段按地址归到对应存储器。")
 
     # 自己写的 vs 库
     lib = sum(e.size for e in entries if e.is_lib)
