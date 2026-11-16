@@ -82,6 +82,7 @@ class Memory:
 @dataclass
 class Result:
     entries: list[Entry] = field(default_factory=list)
+    discarded: list[Entry] = field(default_factory=list)   # 被 --gc-sections 丢掉的段
     memories: list[Memory] = field(default_factory=list)
     declared: dict[str, tuple[int, int]] = field(default_factory=dict)  # 段名 -> (大小, 起始地址)
     fmt: str = ""
@@ -147,44 +148,21 @@ RE_GCC_HEADER = re.compile(
 RE_GCC_OBJ = re.compile(r"(\.o$|\.obj$|\.a\(|\.lib\()")
 
 
-def parse_gcc(text: str) -> Result:
-    res = Result(fmt="gcc")
-    lines = text.splitlines()
+def _scan_sections(lines: list[str]) -> tuple[list[Entry], list[tuple[str, int, int]]]:
+    """扫一段 map 文本, 返回 (输入段条目, 输出段表头)
 
-    # 1) Memory Configuration
-    try:
-        i = next(i for i, l in enumerate(lines) if l.startswith("Memory Configuration"))
-    except StopIteration:
-        i = 0
-    for l in lines[i:]:
-        if not l.strip():
-            if res.memories:
-                break
-            continue
-        if l.lower().startswith(("name", "origin", "attributes")):
-            continue
-        m = RE_GCC_MEM.match(l.strip())
-        if m and not l.startswith(" "):
-            res.memories.append(Memory(m.group(1), int(m.group(2), 16), int(m.group(3), 16)))
-
-    # 2) 只解析 "Linker script and memory map" 之后的内容
-    #    (前面的 "Discarded input sections" 都是被 gc-sections 丢掉的, 地址全是 0)
-    try:
-        start = next(i for i, l in enumerate(lines) if l.startswith("Linker script and memory map"))
-    except StopIteration:
-        start = 0
-
-    pending = ""          # 上一行只有段名时, 记下来给下一行用
-    for l in lines[start:]:
+    输入段可能是两行(段名单独一行, 地址在下一行), 所以要记住 pending。
+    """
+    entries: list[Entry] = []
+    headers: list[tuple[str, int, int]] = []
+    pending = ""
+    for l in lines:
         if not l.strip():
             continue
 
         h = RE_GCC_HEADER.match(l)
         if h:
-            name = h.group(1)
-            size = int(h.group(3), 16)
-            old = res.declared.get(name, (0, 0))
-            res.declared[name] = (old[0] + size, old[1] or int(h.group(2), 16))
+            headers.append((h.group(1), int(h.group(3), 16), int(h.group(2), 16)))
             continue
 
         m = RE_GCC_NAME_ONLY.match(l)
@@ -208,10 +186,59 @@ def parse_gcc(text: str) -> Result:
 
         if not RE_GCC_OBJ.search(rest):
             continue          # 符号赋值 / 链接脚本指令, 不是目标文件
-        res.entries.append(Entry(section, addr, size, rest.split()[0]))
+        entries.append(Entry(section, addr, size, rest.split()[0]))
+    return entries, headers
 
-    # 3) 合并同名同源, 去掉 0 字节
+
+def parse_gcc(text: str) -> Result:
+    res = Result(fmt="gcc")
+    lines = text.splitlines()
+
+    # 1) Memory Configuration
+    try:
+        i = next(i for i, l in enumerate(lines) if l.startswith("Memory Configuration"))
+    except StopIteration:
+        i = 0
+    for l in lines[i:]:
+        if not l.strip():
+            if res.memories:
+                break
+            continue
+        if l.lower().startswith(("name", "origin", "attributes")):
+            continue
+        m = RE_GCC_MEM.match(l.strip())
+        if m and not l.startswith(" "):
+            res.memories.append(Memory(m.group(1), int(m.group(2), 16), int(m.group(3), 16)))
+
+    # 2) 主体: "Linker script and memory map" 之后
+    #    (前面的 "Discarded input sections" 都是被 gc-sections 丢掉的, 地址全是 0)
+    try:
+        start = next(i for i, l in enumerate(lines) if l.startswith("Linker script and memory map"))
+    except StopIteration:
+        start = 0
+
+    res.entries, headers = _scan_sections(lines[start:])
+    for name, size, addr in headers:
+        old = res.declared.get(name, (0, 0))
+        res.declared[name] = (old[0] + size, old[1] or addr)
+
+    # 3) 单独记下被丢弃的段, 供 --discarded 用
+    d_start = None
+    for i, l in enumerate(lines):
+        if l.startswith("Discarded input sections"):
+            d_start = i
+            break
+    if d_start is not None:
+        d_end = len(lines)
+        for i in range(d_start + 1, len(lines)):
+            if lines[i].startswith("Memory Configuration"):
+                d_end = i
+                break
+        res.discarded, _ = _scan_sections(lines[d_start:d_end])
+
+    # 4) 合并同名同源, 去掉 0 字节
     res.entries = _merge([e for e in res.entries if e.size > 0])
+    res.discarded = _merge([e for e in res.discarded if e.size > 0])
     finalize(res)
     return res
 
@@ -286,7 +313,7 @@ def mem_kind(memories: list, addr: int) -> str:
 def finalize(res: "Result") -> None:
     """给每条记录定归属: 先看段名, 看不出来就看它的地址落在哪个存储器里。
     这样 .rtt_buffer / ._user_heap_stack 这类自定义段也能算对。"""
-    for e in res.entries:
+    for e in list(res.entries) + list(res.discarded):
         k = kind_of(e.section)
         if k == "other":
             k = mem_kind(res.memories, e.addr)
@@ -535,6 +562,72 @@ def to_html(res: Result, top: int, title: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# 被丢弃的段
+# --------------------------------------------------------------------------
+
+
+def discarded_report(res: Result, top: int = 12) -> str:
+    out: list[str] = []
+    w = out.append
+
+    if not res.discarded:
+        return "\n  这份 map 里没有 Discarded input sections(可能没开 --gc-sections, 或是 armcc)。\n"
+
+    code = [e for e in res.discarded if e.kind == "flash"]
+    data = [e for e in res.discarded if e.kind == "ram"]
+    dbg = [e for e in res.discarded if e.kind == "meta"]
+    s_code = sum(e.size for e in code) + sum(e.size for e in data)
+    s_dbg = sum(e.size for e in dbg)
+    s_all = sum(e.size for e in res.discarded)
+
+    w("")
+    w("  丢弃清单   Discarded input sections")
+    w("")
+    w(f"  条目        {len(res.discarded)} 条")
+    w(f"  总计        {human(s_all)}")
+    w(f"    代码      {human(s_code):>10}   ← 真正被裁掉的程序")
+    w(f"    调试信息  {human(s_dbg):>10}   不进 Flash, 可以忽略")
+    w("")
+
+    # 按模块
+    agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for e in res.discarded:
+        slot = 1 if e.kind == "meta" else 0
+        agg[e.module][slot] += e.size
+    rows = sorted(agg.items(), key=lambda kv: (-kv[1][0], -kv[1][1]))[:top]
+
+    w("  丢弃最多的模块")
+    w("    " + pad("#", 3, "right") + "  " + pad("代码", 10, "right")
+      + "  " + pad("调试", 10, "right") + "  模块")
+    w("    " + "-" * 66)
+    for i, (m, (c, d)) in enumerate(rows, 1):
+        w("    " + pad(str(i), 3, "right") + "  " + pad(human(c), 10, "right")
+          + "  " + pad(human(d), 10, "right") + "  " + m)
+    w("")
+
+    # 整个模块都没用上
+    kept = {e.module for e in res.entries if e.kind != "meta"}
+    libs = {e.module for e in res.discarded if e.is_lib}
+    dead = [(m, c) for m, (c, d) in agg.items() if c > 0 and m not in kept and m not in libs]
+    if dead:
+        dead.sort(key=lambda kv: -kv[1])
+        w(f"  整个文件一行都没进固件 ({len(dead)})")
+        for m, c in dead[:top]:
+            w(f"    {human(c):>10}  {m}")
+        w("")
+
+    if dead:
+        w("      上表里 HAL 模块(stm32xxxx_hal_*)可以在 hal_conf.h 里关掉, 省编译时间;")
+        w("      其他文件被整体丢弃, 说明对应功能没启用(例如 syscalls.c 没了 = printf 没重定向)。")
+        w("")
+    w("  注  Discarded 不是浪费, 是裁剪生效的证据。")
+    w("      唯一要担心的是: 只被向量表/函数指针/汇编间接引用的东西被误丢。")
+    w("      用 -Wl,--print-gc-sections 可以看到完整清单。")
+    w("")
+    return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------
 # 两个版本对比
 # --------------------------------------------------------------------------
 
@@ -652,6 +745,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="把 .debug_* / .comment 等调试信息也算进来(默认不算, 它们不占 Flash)")
     p.add_argument("--diff", type=Path, metavar="OLD_MAP",
                    help="和另一份 map 对比(当前文件当作新版本)")
+    p.add_argument("--discarded", action="store_true",
+                   help="看被 --gc-sections 丢掉的段, 以及哪些模块整个没用上")
     args = p.parse_args(argv)
 
     # 兜底: 控制台编码怪异时也不让程序崩在打印上
@@ -672,6 +767,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.with_meta:
         res.entries = [e for e in res.entries if e.kind != "meta"]
+
+    if args.discarded:
+        print(discarded_report(res, args.top))
+        return 0
 
     if args.diff:
         if not args.diff.exists():

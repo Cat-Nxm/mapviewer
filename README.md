@@ -58,6 +58,7 @@ python mapviewer.py firmware.map -k flash       # 只看 Flash
 python mapviewer.py firmware.map -b module      # 按模块聚合，而不是按符号
 python mapviewer.py firmware.map --html out.html  # 顺手导一份网页报告
 python mapviewer.py new.map --diff old.map      # 和上一次构建对比
+python mapviewer.py firmware.map --discarded    # 看被裁掉了什么
 ```
 
 ## 怎么拿到 map 文件
@@ -112,6 +113,35 @@ python mapviewer.py build/Debug/xxx.map --diff build/Release/xxx.map
 - **这次改动多吃了多少？是哪个模块吃的？**
 - **两个配置（Debug / Release）到底差在哪？** —— 差的不只是优化等级，可能是**模块根本不一样**
 - **昨天还能装下，今天装不下了，是谁干的？**
+
+
+## 看被裁掉了什么
+
+```bash
+python mapviewer.py firmware.map --discarded
+```
+
+```
+  条目        651 条
+  总计        122.6 KB
+    代码         38.8 KB   ← 真正被裁掉的程序
+    调试信息     83.9 KB   不进 Flash, 可以忽略
+
+  丢弃最多的模块
+      1     13.1 KB  stm32f1xx_hal_i2c.c.obj
+      2      8.6 KB  stm32f1xx_hal_tim.c.obj
+
+  整个文件一行都没进固件 (10)
+        1.0 KB  stm32f1xx_hal_flash_ex.c.obj
+         518 B  stm32f1xx_hal_exti.c.obj
+```
+
+**行数会骗人。** 一个开了 `-ffunction-sections` 的工程，Discarded 块动辄几千行——但其中九成是 `.debug_*`，本来就不进 Flash。看"代码"那一行才是真的。
+
+两个用处：
+
+- **削编译时间**：整个文件都没进固件的 HAL 模块，在 `hal_conf.h` 里关掉就行。
+- **发现"没启用的功能"**：`syscalls.c` 整个被丢弃 = `printf` 没有重定向，哪天你想用串口打日志，输出会静默消失。
 
 
 ## 常见疑问：bin 有 19 KB，为什么 map 分析只有 5.4 KB？
