@@ -535,6 +535,99 @@ def to_html(res: Result, top: int, title: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# 两个版本对比
+# --------------------------------------------------------------------------
+
+
+def _agg(entries: list[Entry]) -> dict[tuple[str, str], int]:
+    d: dict[tuple[str, str], int] = defaultdict(int)
+    for e in entries:
+        d[(e.module, e.symbol)] += e.size
+    return d
+
+
+def _agg_mod(entries: list[Entry]) -> dict[str, int]:
+    d: dict[str, int] = defaultdict(int)
+    for e in entries:
+        d[e.module] += e.size
+    return d
+
+
+def _signed(n: int) -> str:
+    if n > 0:
+        return f"+{human(n)}"
+    if n < 0:
+        return f"-{human(-n)}"
+    return "0"
+
+
+def diff_report(old: Result, new: Result, top: int = 12,
+                old_name: str = "旧", new_name: str = "新") -> str:
+    out: list[str] = []
+    w = out.append
+
+    o_all, n_all = old.total, new.total
+    d_all = n_all - o_all
+    pct = (d_all / o_all * 100) if o_all else 0.0
+
+    w("")
+    w(f"  旧  {old_name:<28}{human(o_all):>10}")
+    w(f"  新  {new_name:<28}{human(n_all):>10}")
+    w(f"  变化{'':<24}{_signed(d_all):>10}   ({pct:+.1f}%)")
+    w("")
+
+    for k in ("flash", "ram"):
+        o = sum(e.size for e in old.entries if e.kind == k)
+        n = sum(e.size for e in new.entries if e.kind == k)
+        if not o and not n:
+            continue
+        d = n - o
+        p = (d / o * 100) if o else 0.0
+        w(f"  {k.upper():<6}{human(o):>10}  →  {human(n):<10}{_signed(d):>10}  ({p:+.1f}%)")
+    w("")
+
+    om, nm = _agg_mod(old.entries), _agg_mod(new.entries)
+    added = {m: nm[m] for m in nm if m not in om}
+    removed = {m: om[m] for m in om if m not in nm}
+    if added:
+        w(f"  新增模块 ({len(added)})")
+        for m, s in sorted(added.items(), key=lambda kv: -kv[1])[:top]:
+            w(f"    +{human(s):>9}  {m}")
+        w("")
+    if removed:
+        w(f"  消失模块 ({len(removed)})")
+        for m, s in sorted(removed.items(), key=lambda kv: -kv[1])[:top]:
+            w(f"    -{human(s):>9}  {m}")
+        w("")
+
+    oa, na = _agg(old.entries), _agg(new.entries)
+    deltas = []
+    for key in set(oa) | set(na):
+        d = na.get(key, 0) - oa.get(key, 0)
+        if d:
+            deltas.append((d, key))
+    grow = sorted([x for x in deltas if x[0] > 0], key=lambda x: -x[0])[:top]
+    shrink = sorted([x for x in deltas if x[0] < 0], key=lambda x: x[0])[:top]
+
+    if grow:
+        w("  变大的符号")
+        for d, (mod, sym) in grow:
+            w(f"    {_signed(d):>10}  {pad(sym[:30], 30)}  {mod}")
+        w("")
+    if shrink:
+        w("  变小的符号")
+        for d, (mod, sym) in shrink:
+            w(f"    {_signed(d):>10}  {pad(sym[:30], 30)}  {mod}")
+        w("")
+
+    if not added and not removed and not deltas:
+        w("  两份 map 完全一致。")
+        w("")
+
+    return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -557,6 +650,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--html", type=Path, help="同时导出一份 HTML 报告")
     p.add_argument("--with-meta", action="store_true",
                    help="把 .debug_* / .comment 等调试信息也算进来(默认不算, 它们不占 Flash)")
+    p.add_argument("--diff", type=Path, metavar="OLD_MAP",
+                   help="和另一份 map 对比(当前文件当作新版本)")
     args = p.parse_args(argv)
 
     # 兜底: 控制台编码怪异时也不让程序崩在打印上
@@ -577,6 +672,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.with_meta:
         res.entries = [e for e in res.entries if e.kind != "meta"]
+
+    if args.diff:
+        if not args.diff.exists():
+            print(f"找不到文件: {args.diff}", file=sys.stderr)
+            return 2
+        old = parse(args.diff)
+        if not args.with_meta:
+            old.entries = [e for e in old.entries if e.kind != "meta"]
+        def label(path: Path) -> str:
+            n = path.parent.name
+            return n if n and n not in ("", ".") else path.stem
+        print(diff_report(old, res, args.top, label(args.diff), label(args.map)))
+        return 0
 
     print(report(res, args.top, args.by, args.kind))
 

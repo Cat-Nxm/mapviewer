@@ -57,6 +57,7 @@ python mapviewer.py firmware.map -k ram         # 只看 RAM
 python mapviewer.py firmware.map -k flash       # 只看 Flash
 python mapviewer.py firmware.map -b module      # 按模块聚合，而不是按符号
 python mapviewer.py firmware.map --html out.html  # 顺手导一份网页报告
+python mapviewer.py new.map --diff old.map      # 和上一次构建对比
 ```
 
 ## 怎么拿到 map 文件
@@ -79,6 +80,39 @@ python mapviewer.py firmware.map --html out.html  # 顺手导一份网页报告
    - 关掉 printf 的浮点支持（`-u _printf_float` 不要加）
    - 检查 `_sbrk` / `malloc` 是不是被无意中拉进来了（`heap_area` 那一行）
 3. **最后看具体符号。** 排名靠前又意外的，通常是一次"顺手加的功能"。
+
+## 两个版本对比（最有用的功能）
+
+单独一份 map 只是一串数字。**两份放在一起，才是一份体检报告。**
+
+```bash
+python mapviewer.py build/Debug/xxx.map --diff build/Release/xxx.map
+```
+
+```
+  旧  Release                         5.8 KB
+  新  Debug                          28.4 KB
+  变化                          +22.5 KB   (+387.1%)
+
+  FLASH     5.4 KB  →  19.8 KB     +14.4 KB  (+265.3%)
+  RAM        409 B  →   8.6 KB      +8.2 KB  (+2041.3%)
+
+  新增模块 (15)
+    +   6.8 KB  uart_serial.c.obj
+    +   2.0 KB  iap_upgrade.c.obj
+    +   1.5 KB  iap_aes.c.obj
+
+  变大的符号
+       +2.0 KB  s_dmaRxBuffer        uart_serial.c.obj
+       +1.0 KB  s_crc32_table        iap_crc.c.obj
+```
+
+它回答的是真正要紧的问题：
+
+- **这次改动多吃了多少？是哪个模块吃的？**
+- **两个配置（Debug / Release）到底差在哪？** —— 差的不只是优化等级，可能是**模块根本不一样**
+- **昨天还能装下，今天装不下了，是谁干的？**
+
 
 ## 常见疑问：bin 有 19 KB，为什么 map 分析只有 5.4 KB？
 
