@@ -59,6 +59,7 @@ python mapviewer.py firmware.map -b module      # 按模块聚合，而不是按
 python mapviewer.py firmware.map --html out.html  # 顺手导一份网页报告
 python mapviewer.py new.map --diff old.map      # 和上一次构建对比
 python mapviewer.py firmware.map --discarded    # 看被裁掉了什么
+python mapviewer.py firmware.map -g HAL_        # 只看名字里含 HAL_ 的
 ```
 
 ## 怎么拿到 map 文件
@@ -142,6 +143,31 @@ python mapviewer.py firmware.map --discarded
 
 - **削编译时间**：整个文件都没进固件的 HAL 模块，在 `hal_conf.h` 里关掉就行。
 - **发现"没启用的功能"**：`syscalls.c` 整个被丢弃 = `printf` 没有重定向，哪天你想用串口打日志，输出会静默消失。
+
+
+## 只看某一类
+
+```bash
+python mapviewer.py firmware.map -g uart -k ram
+```
+
+```
+  [RAM]  匹配 6.0 KB / 全量 8.6 KB    69.9%  ████████████████░░░░░░
+
+      1      2.0 KB   23.4%  .bss.s_txBuffer       s_txBuffer       uart_serial.c.obj
+      2      2.0 KB   23.4%  .bss.s_dmaRxBuffer    s_dmaRxBuffer    uart_serial.c.obj
+      3      2.0 KB   23.4%  .bss.s_rxBuffer       s_rxBuffer       uart_serial.c.obj
+```
+
+匹配范围是**符号名 / 模块名 / 段名**，不区分大小写。
+
+注意占比的分母始终是**全量**，不是匹配子集——这样每一行的百分比和不过滤时是一致的，可以横向对比。
+
+`--discarded` 也支持 `-g`：
+
+```bash
+python mapviewer.py firmware.map --discarded -g i2c
+```
 
 
 ## 常见疑问：bin 有 19 KB，为什么 map 分析只有 5.4 KB？

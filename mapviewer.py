@@ -16,7 +16,7 @@ mapviewer —— 读懂 map 文件：到底是谁占了我的 Flash 和 RAM
 
 设计原则:
   1. 只用标准库, 不装任何东西就能跑。
-  2. 默认输出按类型(Flash / RAM) 排序和段来源, 方便定位位置。
+  2. 默认输出按类型(Flash / RAM) 排序添加段来源, 方便定位位置。
   3. 同时告诉你"谁占的"和"是不是你自己写的" —— 库占大头是最常见的真相。
 """
 
@@ -397,7 +397,7 @@ def pick_memory(res: Result, kind: str) -> Memory | None:
     return None
 
 
-def report(res: Result, top: int, by: str, kind: str) -> str:
+def report(res: Result, top: int, by: str, kind: str, grep: str = "") -> str:
     out: list[str] = []
     w = out.append
 
@@ -408,15 +408,21 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
     if not entries:
         return "没有解析到任何条目, 检查一下 map 文件是不是空的, 或者段名规则要不要补充。"
 
-    total = sum(e.size for e in entries if e.kind in ("flash", "ram"))
-    meta = sum(e.size for e in entries if e.kind == "meta")
+    base = entries                      # 分母: 全量
+    rows_src = entries                  # 展示: 可能被 --grep 过滤
+    if grep:
+        g = grep.lower()
+        rows_src = [e for e in entries
+                    if g in e.symbol.lower() or g in e.module.lower() or g in e.section.lower()]
+        if not rows_src:
+            return f"没有匹配 '{grep}' 的条目。试试更短的关键词, 比如 HAL_ 或 uart。"
+
+    total = sum(e.size for e in entries)
 
     w("")
     w(f"  格式        {res.fmt}")
     w(f"  条目        {len(entries)} 条")
-    w(f"  合计        {human(total)}   (Flash + RAM)")
-    if meta:
-        w(f"  调试信息    {human(meta)}   不占 Flash; 输入段相加, 合并去重后会小很多")
+    w(f"  合计        {human(total)}")
     w("")
 
     # 空间占用条 (有链接器声明的大小时, 以它为准)
@@ -457,7 +463,7 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     # 按模块聚合
     if by == "module":
-        src_entries = entries if kind == "all" else [e for e in entries if e.kind == kind]
+        src_entries = rows_src
         agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])
         for e in src_entries:
             agg[e.module][0 if e.kind == "flash" else 1] += e.size
@@ -484,10 +490,12 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
         # .data 的初值在 Flash 里也存一份
         return e.kind == "ram" and e.section.startswith(".data")
 
-    fl = [e for e in entries if in_flash(e)]
-    rm = [e for e in entries if e.kind == "ram"]
-    tf = sum(e.size for e in fl) or 1
-    tr = sum(e.size for e in rm) or 1
+    fl = [e for e in rows_src if in_flash(e)]
+    rm = [e for e in rows_src if e.kind == "ram"]
+    tf = sum(e.size for e in base if in_flash(e)) or 1   # 分母始终是全量
+    tr = sum(e.size for e in base if e.kind == "ram") or 1
+    mf = sum(e.size for e in fl)
+    mr = sum(e.size for e in rm)
 
     def emit_table(tag: str, selected: list[Entry], denom: int) -> None:
         if not selected:
@@ -495,8 +503,13 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
         rows = sorted(selected, key=lambda x: -x.size)[:top]
         mem = pick_memory(res, tag)
         cap = mem.length if mem else 0
+        matched = sum(e.size for e in selected)
         w("")
-        if cap:
+        if grep:
+            r = matched / denom
+            w(f"  [{tag.upper()}]  匹配 {human(matched)} / 全量 {human(denom)}"
+              f"   {r * 100:5.1f}%  {bar(r, 24)}")
+        elif cap:
             r = denom / cap
             w(f"  [{tag.upper()}]  {human(denom)} / {human(cap)}   {r * 100:5.1f}%  {bar(r, 24)}")
         else:
@@ -518,17 +531,19 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     if kind == "all":
         w("")
-        w("  表头的合计按输入段相加, 会比上面的总量略大(链接器把重复内容列了多次)。")
+        if not grep:
+            w("  表头的合计按输入段相加, 会比上面的总量略大(链接器把重复内容列了多次)。")
         w("  .data 的初值在 Flash 里也存一份, 所以它在两张表里都出现。")
         w("  段名列就是 map 里的原名; .rtt_* / .version_info 等自定义段按地址归到对应存储器。")
 
     # 自己写的 vs 库
-    lib = sum(e.size for e in entries if e.is_lib)
-    mine = total - lib if total > lib else 0
+    lib = sum(e.size for e in rows_src if e.is_lib)
+    all_ = sum(e.size for e in rows_src) or 1
+    mine = all_ - lib if all_ > lib else 0
     w("")
-    w("  谁在占地方:")
-    w(f"    我的代码  {human(mine):>10}  {mine / total * 100:5.1f}%  {bar(mine / total)}")
-    w(f"    静态库    {human(lib):>10}  {lib / total * 100:5.1f}%  {bar(lib / total)}")
+    w("  谁在占地方" + (f"(匹配 '{grep}' 的部分)" if grep else "") + ":")
+    w(f"    我的代码  {human(mine):>10}  {mine / all_ * 100:5.1f}%  {bar(mine / all_)}")
+    w(f"    静态库    {human(lib):>10}  {lib / all_ * 100:5.1f}%  {bar(lib / all_)}")
     if lib > mine:
         w("")
         w(f"  {WARN} 库比你自己的代码占得多。这是嵌入式的常态, 但也是最大的优化空间:")
@@ -787,6 +802,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="把 .debug_* / .comment 等调试信息也算进来(默认不算, 它们不占 Flash)")
     p.add_argument("--diff", type=Path, metavar="OLD_MAP",
                    help="和另一份 map 对比(当前文件当作新版本)")
+    p.add_argument("-g", "--grep", default="", metavar="KEYWORD",
+                   help="只看名字里含 KEYWORD 的条目(符号/模块/段名, 不区分大小写)")
     p.add_argument("--discarded", action="store_true",
                    help="看被 --gc-sections 丢掉的段, 以及哪些模块整个没用上")
     args = p.parse_args(argv)
@@ -811,6 +828,11 @@ def main(argv: list[str] | None = None) -> int:
         res.entries = [e for e in res.entries if e.kind != "meta"]
 
     if args.discarded:
+        if args.grep:
+            g = args.grep.lower()
+            res.discarded = [e for e in res.discarded
+                             if g in e.symbol.lower() or g in e.module.lower()
+                             or g in e.section.lower()]
         print(discarded_report(res, args.top))
         return 0
 
@@ -827,7 +849,7 @@ def main(argv: list[str] | None = None) -> int:
         print(diff_report(old, res, args.top, label(args.diff), label(args.map)))
         return 0
 
-    print(report(res, args.top, args.by, args.kind))
+    print(report(res, args.top, args.by, args.kind, args.grep))
 
     if args.html:
         args.html.write_text(to_html(res, args.top, args.map.stem), encoding="utf-8")
