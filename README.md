@@ -80,6 +80,26 @@ python mapviewer.py firmware.map --html out.html  # 顺手导一份网页报告
    - 检查 `_sbrk` / `malloc` 是不是被无意中拉进来了（`heap_area` 那一行）
 3. **最后看具体符号。** 排名靠前又意外的，通常是一次"顺手加的功能"。
 
+## 常见疑问：bin 有 19 KB，为什么 map 分析只有 5.4 KB？
+
+大概率不是工具算错，是**你比了两次不同的构建**。按出现频率排：
+
+1. **map 和 bin 不是同一次构建**（最常见）
+   同一个工程，Debug 和 Release 能差三倍以上。先看两边的时间戳，和所在的 `build/Debug` / `build/Release` 目录。
+2. **bin 被 0xFF 填充**
+   `objcopy -O binary` 会把最低地址到最高地址之间铺平，中间的洞全填 0xFF。map 里的段是紧凑的，bin 是补过空白的。
+3. **bin 是多个镜像拼起来的**
+   比如 BL + APP 合成一个烧录文件。map 只描述其中一个。
+
+**怎么确认（一条命令）：**
+
+```bash
+arm-none-eabi-size -A build/Release/xxx.elf
+```
+
+把 `.text` + `.rodata` + `.isr_vector` 加起来，和 map 的 FLASH 数对一下。对得上，说明是同一份构建，那问题就在 bin 的生成方式上。
+
+
 ## 已知限制
 
 - `.data` 的初值在 Flash 里也有一份拷贝，目前统一算进 RAM，会让 Flash 略微低估

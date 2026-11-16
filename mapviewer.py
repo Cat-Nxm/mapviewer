@@ -43,6 +43,7 @@ class Entry:
     addr: int             # 起始地址
     size: int             # 字节数
     obj: str              # 来源文件, 例如 ./build/main.o 或 libc.a(memcpy.o)
+    kind: str = ""        # flash / ram / meta / other, 解析后统一判定
 
     @property
     def symbol(self) -> str:
@@ -82,7 +83,7 @@ class Memory:
 class Result:
     entries: list[Entry] = field(default_factory=list)
     memories: list[Memory] = field(default_factory=list)
-    declared: dict[str, int] = field(default_factory=dict)   # 链接器声明的各输出段大小
+    declared: dict[str, tuple[int, int]] = field(default_factory=dict)  # 段名 -> (大小, 起始地址)
     fmt: str = ""
 
     @property
@@ -90,7 +91,14 @@ class Result:
         return sum(e.size for e in self.entries)
 
     def declared_of(self, kind: str) -> int:
-        return sum(v for k, v in self.declared.items() if kind_of(k) == kind)
+        total = 0
+        for name, (size, addr) in self.declared.items():
+            k = kind_of(name)
+            if k == "other":
+                k = mem_kind(self.memories, addr)
+            if k == kind:
+                total += size
+        return total
 
 
 # --------------------------------------------------------------------------
@@ -173,7 +181,10 @@ def parse_gcc(text: str) -> Result:
 
         h = RE_GCC_HEADER.match(l)
         if h:
-            res.declared[h.group(1)] = res.declared.get(h.group(1), 0) + int(h.group(3), 16)
+            name = h.group(1)
+            size = int(h.group(3), 16)
+            old = res.declared.get(name, (0, 0))
+            res.declared[name] = (old[0] + size, old[1] or int(h.group(2), 16))
             continue
 
         m = RE_GCC_NAME_ONLY.match(l)
@@ -201,6 +212,7 @@ def parse_gcc(text: str) -> Result:
 
     # 3) 合并同名同源, 去掉 0 字节
     res.entries = _merge([e for e in res.entries if e.size > 0])
+    finalize(res)
     return res
 
 
@@ -233,10 +245,11 @@ def parse_armcc(text: str) -> Result:
         r = RE_ARM_REGION.search(l)
         if r:
             name, cap = r.group(1), int(r.group(2), 16)
-            if cap and not cap >= 0xFFFFFFFF:
+            if cap and cap < 0xFFFFFFFF:
                 res.memories.append(Memory(name, 0, cap))
     if got:
         res.entries = _merge([e for e in res.entries if e.size > 0])
+    finalize(res)
     return res
 
 
@@ -255,6 +268,29 @@ def _merge(entries: list[Entry]) -> list[Entry]:
         else:
             bucket[key] = e
     return list(bucket.values())
+
+
+def mem_kind(memories: list, addr: int) -> str:
+    for m in memories:
+        if m.length >= 0xFFFFFFFF:
+            continue
+        if m.origin <= addr < m.origin + m.length:
+            n = m.name.upper()
+            if any(x in n for x in ("FLASH", "ROM", "IROM")):
+                return "flash"
+            if any(x in n for x in ("RAM", "CCM")):
+                return "ram"
+    return "other"
+
+
+def finalize(res: "Result") -> None:
+    """给每条记录定归属: 先看段名, 看不出来就看它的地址落在哪个存储器里。
+    这样 .rtt_buffer / ._user_heap_stack 这类自定义段也能算对。"""
+    for e in res.entries:
+        k = kind_of(e.section)
+        if k == "other":
+            k = mem_kind(res.memories, e.addr)
+        e.kind = k
 
 
 def detect(text: str) -> str:
@@ -340,7 +376,7 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     entries = res.entries
     if kind != "all":
-        entries = [e for e in entries if kind_of(e.section) == kind]
+        entries = [e for e in entries if e.kind == kind]
 
     if not entries:
         return "没有解析到任何条目, 检查一下 map 文件是不是空的, 或者段名规则要不要补充。"
@@ -354,11 +390,12 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
     w("")
 
     # 空间占用条
+    # 空间占用条 (有链接器声明的大小时, 以它为准)
     for k in ("flash", "ram"):
-        sub = [e for e in entries if kind_of(e.section) == k]
+        sub = [e for e in entries if e.kind == k]
         if not sub:
             continue
-        used = sum(e.size for e in sub)
+        used = res.declared_of(k) or sum(e.size for e in sub)
         mem = pick_memory(res, k)
         cap = mem.length if mem else None
         if cap:
@@ -368,21 +405,26 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
             w(f"  {k.upper():<6}{human(used):>10}  (map 里没有声明容量)")
 
     # 解析完整性校验: 链接器自己声明的段大小, 和解析出来的合计对不上就是漏了
+    merged_note = False
     for k in ("flash", "ram"):
         decl = res.declared_of(k)
         if not decl:
             continue
-        got = sum(e.size for e in res.entries if kind_of(e.section) == k)
+        got = sum(e.size for e in res.entries if e.kind == k)
         diff = decl - got
         if diff == 0:
             mark = "✓"
-        elif 0 < diff <= 64:
-            mark = f"差 {diff} B (链接器对齐填充, 正常)"
+        elif abs(diff) <= 64:
+            mark = f"差 {abs(diff)} B (链接器对齐填充, 正常)"
         elif diff > 0:
             mark = f"{WARN} 差 {diff} B, 可能有未归类的段"
         else:
-            mark = f"{WARN} 解析多了 {-diff} B, 有段被重复统计"
+            mark = f"{WARN} 输入段比声明多 {-diff} B (链接器合并了重复内容, 正常)"
+            merged_note = True
         w(f"  {'校验':<6}{k.upper()}  链接器 {human(decl):>9} / 解析 {human(got):>9}  {mark}")
+    if merged_note:
+        w("  注      上面的 Top 榜按输入段统计, 字符串合并(--merge-constants / relax)")
+        w("          会让同内容被列多次, 所以排名合计可能大于总量。总量以链接器为准。")
 
     # 按模块聚合
     if by == "module":
@@ -442,7 +484,7 @@ def to_html(res: Result, top: int, title: str) -> str:
         )
     cards = []
     for k in ("flash", "ram"):
-        sub = [e for e in res.entries if kind_of(e.section) == k]
+        sub = [e for e in res.entries if e.kind == k]
         used = sum(e.size for e in sub)
         mem = pick_memory(res, k)
         if not used:
@@ -534,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if not args.with_meta:
-        res.entries = [e for e in res.entries if kind_of(e.section) != "meta"]
+        res.entries = [e for e in res.entries if e.kind != "meta"]
 
     print(report(res, args.top, args.by, args.kind))
 
