@@ -1,0 +1,82 @@
+Component: ARM Compiler 5.06 update 7 (build 960) Tool: armlink [4d3601]
+
+==============================================================================
+
+Memory Map of the image
+
+  Image Entry point : 0x08000189
+
+  Load Region LR_IROM1 (Base: 0x08000000, Size: 0x0000A1C4, Max: 0x00080000, ABSOLUTE)
+
+    Execution Region ER_IROM1 (Exec base: 0x08000000, Load base: 0x08000000, Size: 0x0000A1C4, Max: 0x00080000, ABSOLUTE)
+
+    Exec Addr    Load Addr   Size         Type   Attr      Idx    E Section Name        Object
+
+   0x08000000   0x08000000   0x00000188   Code   RO        100    .isr_vector             ./build/startup_stm32f407xx.o
+   0x08000188   0x08000188   0x0000005c   Code   RO        100    .text.Reset_Handler     ./build/startup_stm32f407xx.o
+   0x080001e4   0x080001e4   0x000001b4   Code   RO        100    .text.SystemInit        ./build/system_stm32f4xx.o
+   0x08000398   0x08000398   0x000002a8   Code   RO        100    .text.main              ./build/main.o
+   0x08000640   0x08000640   0x00000038   Code   RO        100    .text.HAL_Init          ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o
+   0x08000678   0x08000678   0x000000e4   Code   RO        100    .text.HAL_MspInit       ./Core/Src/stm32f4xx_hal_msp.o
+   0x0800075c   0x0800075c   0x00000214   Code   RO        100    .text.HAL_GPIO_Init     ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.o
+   0x08000970   0x08000970   0x0000004c   Code   RO        100    .text.HAL_GPIO_WritePin ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.o
+   0x080009bc   0x080009bc   0x000001f8   Code   RO        100    .text.HAL_UART_Init     ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.o
+   0x08000bb4   0x08000bb4   0x00000134   Code   RO        100    .text.HAL_UART_Transmit ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.o
+   0x08000ce8   0x08000ce8   0x000000bc   Code   RO        100    .text.HAL_UART_Receive_IT./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.o
+   0x08000da4   0x08000da4   0x000002d0   Code   RO        100    .text.HAL_RCC_OscConfig ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.o
+   0x08001074   0x08001074   0x0000016c   Code   RO        100    .text.HAL_RCC_ClockConfig./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.o
+   0x080011e0   0x080011e0   0x00000158   Code   RO        100    .text.HAL_SPI_Transmit  ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.o
+   0x08001338   0x08001338   0x00000078   Code   RO        100    .text.HAL_ADC_Start     ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.o
+   0x080013b0   0x080013b0   0x0000009c   Code   RO        100    .text.HAL_TIM_Base_Init ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.o
+   0x0800144c   0x0800144c   0x00000044   Code   RO        100    .text.HAL_Delay         ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o
+   0x08001490   0x08001490   0x000003d8   Code   RO        100    .text.app_task          ./App/Src/app_task.o
+   0x08001868   0x08001868   0x0000051c   Code   RO        100    .text.app_protocol_parse./App/Src/app_protocol.o
+   0x08001d84   0x08001d84   0x00000284   Code   RO        100    .text.app_protocol_encode./App/Src/app_protocol.o
+   0x08002008   0x08002008   0x00000074   Code   RO        100    .text.app_crc16         ./App/Src/app_crc.o
+   0x0800207c   0x0800207c   0x000001a8   Code   RO        100    .text.app_flash_save    ./App/Src/app_param.o
+   0x08002224   0x08002224   0x000002f0   Code   RO        100    .text.app_sensor_update ./App/Src/app_sensor.o
+   0x08002514   0x08002514   0x000000c8   Code   RO        100    .text.app_uart_rx_cb    ./App/Src/app_uart.o
+   0x080025dc   0x080025dc   0x00000018   Code   RO        100    .rodata.app_version     ./App/Src/app_main.o
+   0x080025f4   0x080025f4   0x000002c4   Code   RO        100    .rodata                 ./App/Src/app_table.o
+   0x080028b8   0x080028b8   0x000001c4   Code   RO        100    .text.printf            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-printf.o)
+   0x08002a7c   0x08002a7c   0x000004a8   Code   RO        100    .text.vfprintf          ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
+   0x08002f24   0x08002f24   0x000009c0   Code   RO        100    .text._vfprintf_r       ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
+   0x080038e4   0x080038e4   0x00000058   Code   RO        100    .text.memcpy            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memcpy.o)
+   0x0800393c   0x0800393c   0x0000004c   Code   RO        100    .text.memset            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memset.o)
+   0x08003988   0x08003988   0x0000003c   Code   RO        100    .text.strlen            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strlen.o)
+   0x080039c4   0x080039c4   0x00000044   Code   RO        100    .text.strcmp            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strcmp.o)
+   0x08003a08   0x08003a08   0x000001d8   Code   RO        100    .text.malloc            ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+   0x08003be0   0x08003be0   0x000003ac   Code   RO        100    .text._malloc_r         ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+   0x08003f8c   0x08003f8c   0x000002b4   Code   RO        100    .text._free_r           ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+   0x08004240   0x08004240   0x000002c8   Code   RO        100    .text.__sfvwrite        ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-sfvwrite.o)
+   0x08004508   0x08004508   0x000001a4   Code   RO        100    .text.__ssputc_r        ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-ssputc.o)
+   0x080046ac   0x080046ac   0x00000a4c   Code   RO        100    .text._dtoa_r           ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-dtoa.o)
+   0x080050f8   0x080050f8   0x0000008c   Code   RO        100    .text.__aeabi_dadd      ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_adddf3.o)
+   0x08005184   0x08005184   0x00000094   Code   RO        100    .text.__aeabi_dmul      ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_muldf3.o)
+   0x08005218   0x08005218   0x00000024   Code   RO        100    .text.FPU_Enable        ./build/startup_stm32f407xx.o
+
+    Execution Region RW_IRAM1 (Exec base: 0x20000000, Load base: 0x0800A1C4, Size: 0x00003E7C, Max: 0x00020000, ABSOLUTE)
+
+    Exec Addr    Load Addr   Size         Type   Attr      Idx    E Section Name        Object
+
+   0x20000000   0x0800523c   0x00000004   Data   RW        100    .data.uwTickPrio        ./build/main.o
+   0x20000004   0x0800523c   0x00000098   Data   RW        100    .data.huart1            ./Core/Src/usart.o
+   0x2000009c   0x0800523c   0x00000210   Data   RW        100    .data.g_app_ctx         ./App/Src/app_task.o
+   0x200002ac   0x0800523c   0x00000400   Data   RW        100    .data.g_rx_buf          ./App/Src/app_uart.o
+   0x200006ac   0x0800523c   0x00000400   Data   RW        100    .data.g_tx_buf          ./App/Src/app_uart.o
+   0x20000aac   0x0800523c   0x00000180   Data   RW        100    .data.g_param_cache     ./App/Src/app_param.o
+   0x20000c2c   0x0800523c   0x00000800   Data   RW        100    .bss.g_adc_dma_buf      ./App/Src/app_sensor.o
+   0x2000142c   0x0800523c   0x00000200   Data   RW        100    .bss.g_ring_buf         ./App/Src/app_protocol.o
+   0x2000162c   0x0800523c   0x00002100   Data   RW        100    .bss.heap_area          ./Core/Src/sysmem.o
+   0x2000372c   0x0800523c   0x00000140   Data   RW        100    .bss.sensor_frame       ./App/Src/app_sensor.o
+   0x2000386c   0x0800523c   0x00000300   Data   RW        100    .bss.g_err_log          ./App/Src/app_log.o
+   0x20003b6c   0x0800523c   0x00000038   Data   RW        100    COMMON                  ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o
+   0x20003ba4   0x0800523c   0x0000001c   Data   RW        100    COMMON                  ./App/Src/app_crc.o
+
+==============================================================================
+
+Image component sizes
+
+      Code (inc. data)   RO Data    RW Data    ZI Data      Debug   Object Name
+      1536         44       1024       2048       1280       2048   main.o
+

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.map
+!samples/*.map
+report_demo.html
+*.html
+!samples/*.html
+.DS_Store
+.idea/
+.vscode/
