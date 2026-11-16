@@ -263,7 +263,20 @@ def pad(s: str, width: int, align: str = "left") -> str:
 def bar(ratio: float, width: int = 24) -> str:
     ratio = max(0.0, min(1.0, ratio))
     filled = int(round(ratio * width))
-    return "█" * filled + "░" * (width - filled)
+    return BAR_FULL * filled + BAR_EMPTY * (width - filled)
+
+
+def _supports(ch: str) -> bool:
+    """当前控制台能不能显示这个字符(cp936 下 █ 会炸)"""
+    try:
+        ch.encode(sys.stdout.encoding or "ascii")
+        return True
+    except Exception:
+        return False
+
+
+BAR_FULL, BAR_EMPTY = ("█", "░") if (_supports("█") and _supports("░")) else ("#", "-")
+WARN = "⚠" if _supports("⚠") else "[!]"
 
 
 # --------------------------------------------------------------------------
@@ -350,7 +363,7 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
     w(f"    静态库    {human(lib):>10}  {lib / total * 100:5.1f}%  {bar(lib / total)}")
     if lib > mine:
         w("")
-        w("  ⚠ 库比你自己的代码占得多。这是嵌入式的常态, 但也是最大的优化空间:")
+        w(f"  {WARN} 库比你自己的代码占得多。这是嵌入式的常态, 但也是最大的优化空间:")
         w("    换 newlib-nano / 关掉 printf 浮点 / 去掉没用的重定向, 常常能省下几十 KB。")
     return "\n".join(out) + "\n"
 
@@ -444,6 +457,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--html", type=Path, help="同时导出一份 HTML 报告")
     args = p.parse_args(argv)
+
+    # 兜底: 控制台编码怪异时也不让程序崩在打印上
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except Exception:
+        pass
 
     if not args.map.exists():
         print(f"找不到文件: {args.map}", file=sys.stderr)
