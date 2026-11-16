@@ -49,7 +49,10 @@ class Entry:
         """.text.main -> main ; .bss -> .bss"""
         s = self.section
         if s.startswith(".") and s.count(".") >= 2:
-            return s.split(".", 2)[2]
+            name = s.split(".", 2)[2]
+            if name.startswith("startup."):
+                name = name[len("startup."):]
+            return name
         return s
 
     @property
@@ -79,11 +82,15 @@ class Memory:
 class Result:
     entries: list[Entry] = field(default_factory=list)
     memories: list[Memory] = field(default_factory=list)
+    declared: dict[str, int] = field(default_factory=dict)   # 链接器声明的各输出段大小
     fmt: str = ""
 
     @property
     def total(self) -> int:
         return sum(e.size for e in self.entries)
+
+    def declared_of(self, kind: str) -> int:
+        return sum(v for k, v in self.declared.items() if kind_of(k) == kind)
 
 
 # --------------------------------------------------------------------------
@@ -91,19 +98,23 @@ class Result:
 # --------------------------------------------------------------------------
 
 FLASH_PREFIX = (
-    ".text", ".rodata", ".isr_vector", ".init", ".fini",
-    ".ARM", ".eh_frame", ".glue", ".vectors", ".data.rel.ro",
+    ".text", ".rodata", ".isr_vector", ".init", ".fini", ".preinit_array",
+    ".init_array", ".fini_array", ".ARM", ".eh_frame", ".glue", ".vectors", ".data.rel.ro",
 )
 RAM_PREFIX = (".bss", ".data", ".noinit", ".heap", ".stack", ".ccmram", "COMMON")
+META_PREFIX = (".debug", ".comment", ".ARM.attributes", ".note", ".symtab", ".strtab",
+               ".rel", ".gnu", ".group", ".stab")
 
 
 def kind_of(section: str) -> str:
     s = section
     if s.startswith("COMMON"):
         return "ram"
+    for p in META_PREFIX:
+        if s.startswith(p):
+            return "meta"      # 调试/元信息, 不占 Flash 也不占 RAM
     for p in FLASH_PREFIX:
         if s.startswith(p):
-            # .data 在 Flash 里也有一份初值, 但可写数据主要在 RAM, 这里统一归 RAM
             return "flash"
     for p in RAM_PREFIX:
         if s.startswith(p):
@@ -116,8 +127,16 @@ def kind_of(section: str) -> str:
 # --------------------------------------------------------------------------
 
 RE_GCC_MEM = re.compile(r"^(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)")
-RE_GCC_IN = re.compile(r"^\s(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S.*)$")
-RE_GCC_OBJ = re.compile(r"(\.o|\.a\(|\.obj|\.lib\()")
+# 一行式:  " .text.main   0x0800014c   0x2  path/obj.o"
+RE_GCC_ONE = re.compile(r"^\s+(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S.*)$")
+# 续行式:  "                0x0800014c   0x2  path/obj.o"   (段名在上一行)
+RE_GCC_CONT = re.compile(r"^\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S.*)$")
+# 只有段名, 没有地址:  " .text.SystemInit"
+RE_GCC_NAME_ONLY = re.compile(r"^\s+(\.[\w.$-]+)\s*$")
+# 输出段表头(顶格, 没有目标文件):  ".text   0x0800010c   0x1480"
+RE_GCC_HEADER = re.compile(
+    r"^(\.[\w.$-]+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)(\s+load address.*)?\s*$")
+RE_GCC_OBJ = re.compile(r"(\.o$|\.obj$|\.a\(|\.lib\()")
 
 
 def parse_gcc(text: str) -> Result:
@@ -140,23 +159,44 @@ def parse_gcc(text: str) -> Result:
         if m and not l.startswith(" "):
             res.memories.append(Memory(m.group(1), int(m.group(2), 16), int(m.group(3), 16)))
 
-    # 2) 输入段
-    in_map = False
-    for l in lines:
-        if l.startswith("Linker script and memory map"):
-            in_map = True
+    # 2) 只解析 "Linker script and memory map" 之后的内容
+    #    (前面的 "Discarded input sections" 都是被 gc-sections 丢掉的, 地址全是 0)
+    try:
+        start = next(i for i, l in enumerate(lines) if l.startswith("Linker script and memory map"))
+    except StopIteration:
+        start = 0
+
+    pending = ""          # 上一行只有段名时, 记下来给下一行用
+    for l in lines[start:]:
+        if not l.strip():
             continue
-        if not in_map:
+
+        h = RE_GCC_HEADER.match(l)
+        if h:
+            res.declared[h.group(1)] = res.declared.get(h.group(1), 0) + int(h.group(3), 16)
             continue
-        m = RE_GCC_IN.match(l)
-        if not m:
+
+        m = RE_GCC_NAME_ONLY.match(l)
+        if m:
+            pending = m.group(1)
             continue
-        section, addr, size, rest = m.group(1), int(m.group(2), 16), int(m.group(3), 16), m.group(4)
-        rest = rest.strip()
+
+        m = RE_GCC_ONE.match(l)
+        if m:
+            section, addr, size, rest = (
+                m.group(1), int(m.group(2), 16), int(m.group(3), 16), m.group(4).strip())
+        else:
+            m = RE_GCC_CONT.match(l)
+            if m and pending:
+                section = pending
+                addr, size, rest = int(m.group(1), 16), int(m.group(2), 16), m.group(3).strip()
+                pending = ""
+            else:
+                pending = ""
+                continue
+
         if not RE_GCC_OBJ.search(rest):
-            continue  # 这一行是符号赋值或链接脚本指令, 不是目标文件
-        if section in ("*fill*",):
-            continue
+            continue          # 符号赋值 / 链接脚本指令, 不是目标文件
         res.entries.append(Entry(section, addr, size, rest.split()[0]))
 
     # 3) 合并同名同源, 去掉 0 字节
@@ -327,6 +367,23 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
         else:
             w(f"  {k.upper():<6}{human(used):>10}  (map 里没有声明容量)")
 
+    # 解析完整性校验: 链接器自己声明的段大小, 和解析出来的合计对不上就是漏了
+    for k in ("flash", "ram"):
+        decl = res.declared_of(k)
+        if not decl:
+            continue
+        got = sum(e.size for e in res.entries if kind_of(e.section) == k)
+        diff = decl - got
+        if diff == 0:
+            mark = "✓"
+        elif 0 < diff <= 64:
+            mark = f"差 {diff} B (链接器对齐填充, 正常)"
+        elif diff > 0:
+            mark = f"{WARN} 差 {diff} B, 可能有未归类的段"
+        else:
+            mark = f"{WARN} 解析多了 {-diff} B, 有段被重复统计"
+        w(f"  {'校验':<6}{k.upper()}  链接器 {human(decl):>9} / 解析 {human(got):>9}  {mark}")
+
     # 按模块聚合
     if by == "module":
         agg: dict[str, int] = defaultdict(int)
@@ -456,6 +513,8 @@ def main(argv: list[str] | None = None) -> int:
         help="按符号还是按模块聚合",
     )
     p.add_argument("--html", type=Path, help="同时导出一份 HTML 报告")
+    p.add_argument("--with-meta", action="store_true",
+                   help="把 .debug_* / .comment 等调试信息也算进来(默认不算, 它们不占 Flash)")
     args = p.parse_args(argv)
 
     # 兜底: 控制台编码怪异时也不让程序崩在打印上
@@ -473,6 +532,9 @@ def main(argv: list[str] | None = None) -> int:
         print("解析完成, 但没有条目。可能这个 map 是 --gc-sections 之前的, 或者格式需要适配。",
               file=sys.stderr)
         return 1
+
+    if not args.with_meta:
+        res.entries = [e for e in res.entries if kind_of(e.section) != "meta"]
 
     print(report(res, args.top, args.by, args.kind))
 

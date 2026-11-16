@@ -66,12 +66,33 @@ RAM_ENTRIES = [
 ]
 
 
+def group_flash(section):
+    if section.startswith(".isr_vector"):
+        return ".isr_vector"
+    if section.startswith(".rodata"):
+        return ".rodata"
+    if section.startswith(".ARM"):
+        return ".ARM.exidx"
+    return ".text"
+
+
+def group_ram(section):
+    if section.startswith(".data") or section == "COMMON":
+        return ".data"
+    return ".bss"
+
+
 def gcc():
     L = []
     L.append("Archive member included to satisfy reference by file (symbol)")
     L.append("")
     L.append(" ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-printf.o)")
     L.append("                               ./build/main.o (printf)")
+    L.append("")
+    L.append("Discarded input sections")
+    L.append("")
+    L.append(" .text          0x00000000        0x0 ./build/unused.o")
+    L.append(" .bss           0x00000000       0x20 ./build/unused.o")
     L.append("")
     L.append("Memory Configuration")
     L.append("")
@@ -83,31 +104,43 @@ def gcc():
     L.append("")
     L.append("Linker script and memory map")
     L.append("")
+
     addr = 0x08000000
-    L.append(f".isr_vector     0x{addr:08x}      0x188")
-    for s, sz, o in FLASH_ENTRIES:
-        L.append(f" {s:<28} 0x{addr:08x}      0x{sz:x} {o}")
-        addr += sz
-        if addr % 4:
-            addr += 4 - addr % 4
+    order = [".isr_vector", ".text", ".rodata", ".ARM.exidx"]
+    groups = {}
+    for sec, sz, obj in FLASH_ENTRIES:
+        groups.setdefault(group_flash(sec), []).append((sec, sz, obj))
+    for gname in order:
+        items = groups.get(gname)
+        if not items:
+            continue
+        total = sum(sz for _, sz, _ in items)
+        L.append(f"{gname:<16} 0x{addr:08x}      0x{total:x}")
+        L.append(f" *({gname}*)")
+        for sec, sz, obj in items:
+            L.append(f" {sec:<28} 0x{addr:08x}      0x{sz:x} {obj}")
+            addr += sz
+            if addr % 4:
+                addr += 4 - addr % 4
+        L.append("")
     L.append("                0x%08x                _etext = ." % addr)
     L.append("")
+
     raddr = 0x20000000
-    L.append(f".data           0x{raddr:08x}      0x{sum(s for _, s, _ in RAM_ENTRIES[:6]):x}")
-    L.append(" *(.data*)")
-    for s, sz, o in RAM_ENTRIES[:6]:
-        L.append(f" {s:<28} 0x{raddr:08x}      0x{sz:x} {o}")
-        raddr += sz
-    L.append("")
-    baddr = raddr
-    L.append(f".bss            0x{baddr:08x}      0x{sum(s for _, s, _ in RAM_ENTRIES[6:]):x}")
-    L.append(" *(.bss*)")
-    for s, sz, o in RAM_ENTRIES[6:]:
-        L.append(f" {s:<28} 0x{baddr:08x}      0x{sz:x} {o}")
-        baddr += sz
-    L.append("")
-    L.append(" *fill*         0x%08x        0x4 " % baddr)
-    L.append("")
+    rgroups = {}
+    for sec, sz, obj in RAM_ENTRIES:
+        rgroups.setdefault(group_ram(sec), []).append((sec, sz, obj))
+    for gname in [".data", ".bss"]:
+        items = rgroups.get(gname)
+        if not items:
+            continue
+        total = sum(sz for _, sz, _ in items)
+        L.append(f"{gname:<16} 0x{raddr:08x}      0x{total:x}")
+        L.append(f" *({gname}*)")
+        for sec, sz, obj in items:
+            L.append(f" {sec:<28} 0x{raddr:08x}      0x{sz:x} {obj}")
+            raddr += sz
+        L.append("")
     return "\n".join(L) + "\n"
 
 

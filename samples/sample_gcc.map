@@ -3,6 +3,11 @@ Archive member included to satisfy reference by file (symbol)
  ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-printf.o)
                                ./build/main.o (printf)
 
+Discarded input sections
+
+ .text          0x00000000        0x0 ./build/unused.o
+ .bss           0x00000000       0x20 ./build/unused.o
+
 Memory Configuration
 
 Name             Origin             Length             Attributes
@@ -13,8 +18,12 @@ CCMRAM           0x0000000001000000 0x0000000000010000 rw
 
 Linker script and memory map
 
-.isr_vector     0x08000000      0x188
+.isr_vector      0x08000000      0x188
+ *(.isr_vector*)
  .isr_vector                  0x08000000      0x188 ./build/startup_stm32f407xx.o
+
+.text            0x08000188      0x4dd8
+ *(.text*)
  .text.Reset_Handler          0x08000188      0x5c ./build/startup_stm32f407xx.o
  .text.SystemInit             0x080001e4      0x1b4 ./build/system_stm32f4xx.o
  .text.main                   0x08000398      0x2a8 ./build/main.o
@@ -38,27 +47,31 @@ Linker script and memory map
  .text.app_flash_save         0x0800207c      0x1a8 ./App/Src/app_param.o
  .text.app_sensor_update      0x08002224      0x2f0 ./App/Src/app_sensor.o
  .text.app_uart_rx_cb         0x08002514      0xc8 ./App/Src/app_uart.o
- .rodata.app_version          0x080025dc      0x18 ./App/Src/app_main.o
- .rodata                      0x080025f4      0x2c4 ./App/Src/app_table.o
- .text.printf                 0x080028b8      0x1c4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-printf.o)
- .text.vfprintf               0x08002a7c      0x4a8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
- .text._vfprintf_r            0x08002f24      0x9c0 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
- .text.memcpy                 0x080038e4      0x58 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memcpy.o)
- .text.memset                 0x0800393c      0x4c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memset.o)
- .text.strlen                 0x08003988      0x3c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strlen.o)
- .text.strcmp                 0x080039c4      0x44 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strcmp.o)
- .text.malloc                 0x08003a08      0x1d8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
- .text._malloc_r              0x08003be0      0x3ac ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
- .text._free_r                0x08003f8c      0x2b4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
- .text.__sfvwrite             0x08004240      0x2c8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-sfvwrite.o)
- .text.__ssputc_r             0x08004508      0x1a4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-ssputc.o)
- .text._dtoa_r                0x080046ac      0xa4c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-dtoa.o)
- .text.__aeabi_dadd           0x080050f8      0x8c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_adddf3.o)
- .text.__aeabi_dmul           0x08005184      0x94 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_muldf3.o)
- .text.FPU_Enable             0x08005218      0x24 ./build/startup_stm32f407xx.o
+ .text.printf                 0x080025dc      0x1c4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-printf.o)
+ .text.vfprintf               0x080027a0      0x4a8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
+ .text._vfprintf_r            0x08002c48      0x9c0 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-vfprintf.o)
+ .text.memcpy                 0x08003608      0x58 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memcpy.o)
+ .text.memset                 0x08003660      0x4c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-memset.o)
+ .text.strlen                 0x080036ac      0x3c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strlen.o)
+ .text.strcmp                 0x080036e8      0x44 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-strcmp.o)
+ .text.malloc                 0x0800372c      0x1d8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+ .text._malloc_r              0x08003904      0x3ac ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+ .text._free_r                0x08003cb0      0x2b4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-malloc.o)
+ .text.__sfvwrite             0x08003f64      0x2c8 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-sfvwrite.o)
+ .text.__ssputc_r             0x0800422c      0x1a4 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-ssputc.o)
+ .text._dtoa_r                0x080043d0      0xa4c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libc_nano.a(lib_a-dtoa.o)
+ .text.__aeabi_dadd           0x08004e1c      0x8c ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_adddf3.o)
+ .text.__aeabi_dmul           0x08004ea8      0x94 ./arm-none-eabi/lib/thumb/v7e-m+fp/hard/libgcc.a(_muldf3.o)
+ .text.FPU_Enable             0x08004f3c      0x24 ./build/startup_stm32f407xx.o
+
+.rodata          0x08004f60      0x2dc
+ *(.rodata*)
+ .rodata.app_version          0x08004f60      0x18 ./App/Src/app_main.o
+ .rodata                      0x08004f78      0x2c4 ./App/Src/app_table.o
+
                 0x0800523c                _etext = .
 
-.data           0x20000000      0xc2c
+.data            0x20000000      0xc80
  *(.data*)
  .data.uwTickPrio             0x20000000      0x4 ./build/main.o
  .data.huart1                 0x20000004      0x98 ./Core/Src/usart.o
@@ -66,16 +79,14 @@ Linker script and memory map
  .data.g_rx_buf               0x200002ac      0x400 ./App/Src/app_uart.o
  .data.g_tx_buf               0x200006ac      0x400 ./App/Src/app_uart.o
  .data.g_param_cache          0x20000aac      0x180 ./App/Src/app_param.o
+ COMMON                       0x20000c2c      0x38 ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o
+ COMMON                       0x20000c64      0x1c ./App/Src/app_crc.o
 
-.bss            0x20000c2c      0x2f94
+.bss             0x20000c80      0x2f40
  *(.bss*)
- .bss.g_adc_dma_buf           0x20000c2c      0x800 ./App/Src/app_sensor.o
- .bss.g_ring_buf              0x2000142c      0x200 ./App/Src/app_protocol.o
- .bss.heap_area               0x2000162c      0x2100 ./Core/Src/sysmem.o
- .bss.sensor_frame            0x2000372c      0x140 ./App/Src/app_sensor.o
- .bss.g_err_log               0x2000386c      0x300 ./App/Src/app_log.o
- COMMON                       0x20003b6c      0x38 ./Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.o
- COMMON                       0x20003ba4      0x1c ./App/Src/app_crc.o
-
- *fill*         0x20003bc0        0x4 
+ .bss.g_adc_dma_buf           0x20000c80      0x800 ./App/Src/app_sensor.o
+ .bss.g_ring_buf              0x20001480      0x200 ./App/Src/app_protocol.o
+ .bss.heap_area               0x20001680      0x2100 ./Core/Src/sysmem.o
+ .bss.sensor_frame            0x20003780      0x140 ./App/Src/app_sensor.o
+ .bss.g_err_log               0x200038c0      0x300 ./App/Src/app_log.o
 
