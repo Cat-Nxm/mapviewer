@@ -455,30 +455,47 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     # 按模块聚合
     if by == "module":
-        agg: dict[str, int] = defaultdict(int)
+        agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])
         for e in entries:
-            agg[e.module] += e.size
-        rows = sorted(agg.items(), key=lambda kv: -kv[1])[:top]
+            agg[e.module][0 if e.kind == "flash" else 1] += e.size
+        rows = sorted(agg.items(), key=lambda kv: -(kv[1][0] + kv[1][1]))[:top]
+        tf = sum(v[0] for v in agg.values()) or 1
+        tr = sum(v[1] for v in agg.values()) or 1
         w("")
-        w("  " + pad("#", 3, "right") + "  " + pad("大小", 10, "right")
-          + "  " + pad("占比", 6, "right") + "  模块")
-        w("  " + "-" * 64)
-        for i, (name, size) in enumerate(rows, 1):
-            w("  " + pad(str(i), 3, "right") + "  " + pad(human(size), 10, "right")
-              + "  " + pad(f"{size / total * 100:.1f}%", 6, "right") + "  " + name)
+        w("  " + pad("#", 3, "right") + "  " + pad("Flash", 10, "right")
+          + "  " + pad("RAM", 10, "right") + "  模块")
+        w("  " + "-" * 70)
+        for i, (name, (f, rr)) in enumerate(rows, 1):
+            w("  " + pad(str(i), 3, "right") + "  " + pad(human(f), 10, "right")
+              + "  " + pad(human(rr), 10, "right") + "  " + name)
+        w("")
+        w("  " + pad("", 5) + pad("合计", 10, "right") + "  " + pad(human(tf), 10, "right")
+          + "  " + pad(human(tr), 10, "right"))
         return "\n".join(out) + "\n"
 
-    # 按符号排序
+    # 按符号排序 (占比是在各自存储器内部的占比)
+    totals = {k: (sum(e.size for e in entries if e.kind == k) or 1) for k in ("flash", "ram")}
     rows = sorted(entries, key=lambda e: -e.size)[:top]
     w("")
-    w("  " + pad("#", 3, "right") + "  " + pad("大小", 10, "right")
-      + "  " + pad("占比", 6, "right") + "  " + pad("符号", 30) + "  来源")
-    w("  " + "-" * 90)
+    head = ("  " + pad("#", 3, "right") + "  " + pad("大小", 10, "right")
+            + "  " + pad("占比", 6, "right"))
+    if kind == "all":
+        head += "  " + pad("内存", 5)
+    w(head + "  " + pad("符号", 30) + "  来源")
+    w("  " + "-" * (96 if kind == "all" else 90))
     for i, e in enumerate(rows, 1):
         src = e.module + ("  [lib]" if e.is_lib else "")
-        w("  " + pad(str(i), 3, "right") + "  " + pad(human(e.size), 10, "right")
-          + "  " + pad(f"{e.size / total * 100:.1f}%", 6, "right")
-          + "  " + pad(e.symbol[:30], 30) + "  " + src)
+        pct = e.size / totals.get(e.kind, total) * 100
+        line = ("  " + pad(str(i), 3, "right") + "  " + pad(human(e.size), 10, "right")
+                + "  " + pad(f"{pct:.1f}%", 6, "right"))
+        if kind == "all":
+            line += "  " + pad("Flash" if e.kind == "flash" else "RAM", 5)
+        w(line + "  " + pad(e.symbol[:30], 30) + "  " + src)
+    if kind == "all":
+        w("")
+        w("  占比 = 在该存储器内部的占比。Flash 总量 " + human(totals["flash"])
+          + ", RAM 总量 " + human(totals["ram"]) + "。")
+        w("  只看一种: -k flash  或  -k ram")
 
     # 自己写的 vs 库
     lib = sum(e.size for e in entries if e.is_lib)
