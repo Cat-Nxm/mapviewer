@@ -16,7 +16,7 @@ mapviewer —— 读懂 map 文件：到底是谁占了我的 Flash 和 RAM
 
 设计原则:
   1. 只用标准库, 不装任何东西就能跑。
-  2. 默认输出按"符号"看, 因为定位问题时你找的是函数名。
+  2. 默认输出按类型(Flash / RAM) 排序和段来源, 方便定位位置。
   3. 同时告诉你"谁占的"和"是不是你自己写的" —— 库占大头是最常见的真相。
 """
 
@@ -408,12 +408,15 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
     if not entries:
         return "没有解析到任何条目, 检查一下 map 文件是不是空的, 或者段名规则要不要补充。"
 
-    total = sum(e.size for e in entries)
+    total = sum(e.size for e in entries if e.kind in ("flash", "ram"))
+    meta = sum(e.size for e in entries if e.kind == "meta")
 
     w("")
     w(f"  格式        {res.fmt}")
     w(f"  条目        {len(entries)} 条")
-    w(f"  合计        {human(total)}")
+    w(f"  合计        {human(total)}   (Flash + RAM)")
+    if meta:
+        w(f"  调试信息    {human(meta)}   不占 Flash; 输入段相加, 合并去重后会小很多")
     w("")
 
     # 空间占用条 (有链接器声明的大小时, 以它为准)
@@ -521,7 +524,7 @@ def report(res: Result, top: int, by: str, kind: str) -> str:
 
     # 自己写的 vs 库
     lib = sum(e.size for e in entries if e.is_lib)
-    mine = total - lib
+    mine = total - lib if total > lib else 0
     w("")
     w("  谁在占地方:")
     w(f"    我的代码  {human(mine):>10}  {mine / total * 100:5.1f}%  {bar(mine / total)}")
